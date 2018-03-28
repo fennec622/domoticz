@@ -71,6 +71,7 @@ extern std::string szWWWFolder;
 extern std::string szAppVersion;
 extern std::string szAppHash;
 extern std::string szAppDate;
+extern std::string szPyVersion;
 
 extern time_t m_StartTime;
 
@@ -325,6 +326,20 @@ namespace http {
 					}
 					//add local hostname
 					m_pWebEm->AddLocalNetworks("");
+				}
+			}
+
+			std::string WebRemoteProxyIPs;
+			int nValue;
+			if (m_sql.GetPreferencesVar("WebRemoteProxyIPs", nValue, WebRemoteProxyIPs))
+			{
+				std::vector<std::string> strarray;
+				StringSplit(WebRemoteProxyIPs, ";", strarray);
+				std::vector<std::string>::const_iterator itt;
+				for (itt = strarray.begin(); itt != strarray.end(); ++itt)
+				{
+					std::string ipaddr = *itt;
+					m_pWebEm->AddRemoteProxyIPs(ipaddr);
 				}
 			}
 
@@ -2521,6 +2536,7 @@ namespace http {
 			root["build_time"] = szAppDate;
 			CdzVents* dzvents = CdzVents::GetInstance();
 			root["dzvents_version"] = dzvents->GetVersion();
+			root["python_version"] = szPyVersion;
 
 			if (session.rights != 2)
 			{
@@ -7631,9 +7647,11 @@ namespace http {
 			std::string WebUserName = request::findValue(&req, "WebUserName");
 			std::string WebPassword = request::findValue(&req, "WebPassword");
 			std::string WebLocalNetworks = request::findValue(&req, "WebLocalNetworks");
+			std::string WebRemoteProxyIPs = request::findValue(&req, "WebRemoteProxyIPs");
 			WebUserName = CURLEncode::URLDecode(WebUserName);
 			WebPassword = CURLEncode::URLDecode(WebPassword);
 			WebLocalNetworks = CURLEncode::URLDecode(WebLocalNetworks);
+			WebRemoteProxyIPs = CURLEncode::URLDecode(WebRemoteProxyIPs);
 
 			if ((WebUserName.empty()) || (WebPassword.empty()))
 			{
@@ -7659,19 +7677,28 @@ namespace http {
 			m_sql.UpdatePreferencesVar("WebUserName", WebUserName.c_str());
 			m_sql.UpdatePreferencesVar("WebPassword", WebPassword.c_str());
 			m_sql.UpdatePreferencesVar("WebLocalNetworks", WebLocalNetworks.c_str());
+			m_sql.UpdatePreferencesVar("WebRemoteProxyIPs", WebRemoteProxyIPs.c_str());
 
 			LoadUsers();
 			m_pWebEm->ClearLocalNetworks();
 			std::vector<std::string> strarray;
 			StringSplit(WebLocalNetworks, ";", strarray);
-			std::vector<std::string>::const_iterator itt;
-			for (itt = strarray.begin(); itt != strarray.end(); ++itt)
+			for (std::vector<std::string>::const_iterator itt = strarray.begin(); itt != strarray.end(); ++itt)
 			{
 				std::string network = *itt;
 				m_pWebEm->AddLocalNetworks(network);
 			}
 			//add local hostname
 			m_pWebEm->AddLocalNetworks("");
+
+			m_pWebEm->ClearRemoteProxyIPs();
+			strarray.clear();
+			StringSplit(WebRemoteProxyIPs, ";", strarray);
+			for (std::vector<std::string>::const_iterator itt = strarray.begin(); itt != strarray.end(); ++itt)
+			{
+				std::string ipaddr = *itt;
+				m_pWebEm->AddRemoteProxyIPs(ipaddr);
+			}
 
 			if (session.username.empty())
 			{
@@ -10197,7 +10224,6 @@ namespace http {
 							{
 								sprintf(szData, "%g kWh", total);
 								root["result"][ii]["Data"] = szData;
-								root["result"][ii]["CounterToday"] = szData;
 								if ((dType == pTypeENERGY) || (dType == pTypePOWER))
 								{
 									sprintf(szData, "%ld Watt", atol(strarray[0].c_str()));
@@ -10208,6 +10234,8 @@ namespace http {
 								}
 								root["result"][ii]["Usage"] = szData;
 								root["result"][ii]["HaveTimeout"] = bHaveTimeout;
+								sprintf(szTmp, "%d kWh", 0);
+								root["result"][ii]["CounterToday"] = szTmp;
 							}
 							root["result"][ii]["TypeImg"] = "current";
 							root["result"][ii]["SwitchTypeVal"] = switchtype; //MTYPE_ENERGY
@@ -10922,7 +10950,7 @@ namespace http {
 
 						result2 = m_sql.safe_query("SELECT COUNT(*) FROM DeviceToPlansMap WHERE (PlanID=='%q')",
 							sd[0].c_str());
-						if (result.size() > 0)
+						if (result2.size() > 0)
 						{
 							totDevices = (unsigned int)atoi(result2[0][0].c_str());
 						}
@@ -12600,6 +12628,10 @@ namespace http {
 				else if (Key == "WebLocalNetworks")
 				{
 					root["WebLocalNetworks"] = sValue;
+				}
+				else if (Key == "WebRemoteProxyIPs")
+				{
+					root["WebRemoteProxyIPs"] = sValue;
 				}
 				else if (Key == "RandomTimerFrame")
 				{
